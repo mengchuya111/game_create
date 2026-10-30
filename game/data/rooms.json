@@ -1,0 +1,63 @@
+{
+  "_readme": [
+    "房间模板数据。骨架阶段房间是矩形竞技场，几何用代码生成，布局用本文件描述。",
+    "platforms 每项格式：[中心x, 中心y, 宽, 高]，坐标原点在房间中心，地面顶部固定为 y = 180。",
+    "enemies 是敌人原型 id 列表，按顺序循环取用；实际刷几只由 RoomGenerator 的 enemy_budget 决定。",
+    "  ⚠️ 这个列表里绝对不能放带 \"immortal\": true 的原型（例如 training_dummy）。",
+    "     清房判定是『所有敌人死亡』，放一个打不死的进去，这间房就永远清不掉，整局卡在这里。",
+    "     真发生过：战斗房的第一位就是木桩，玩家打完山贼却永远等不到开门。",
+    "     需要练手感请用调试台 spawn 命令单独召一只，不要写进房间模板。",
+    "正式项目里这一层会被 TileMapLayer + 美术绘制的地图取代，但『布局是数据』这个结构要保留。"
+  ],
+
+  "room_width": 1280,
+  "floor_y": 180,
+  "wall_height": 420,
+
+  "templates": {
+    "START": {
+      "display_name": "起点",
+      "platforms": [],
+      "enemies": []
+    },
+    "COMBAT": {
+      "display_name": "战斗房",
+      "platforms": [
+        [210, 92, 180, 16],
+        [-270, 44, 180, 16],
+        [520, 8, 140, 16]
+      ],
+      "enemies": ["bandit"]
+    },
+    "ELITE": {
+      "display_name": "精英房",
+      "platforms": [
+        [-330, 84, 160, 16],
+        [0, 24, 200, 16],
+        [350, 84, 160, 16]
+      ],
+      "enemies": ["bandit", "bandit", "bandit", "bandit", "bandit", "bandit"]
+    },
+    "TREASURE": {
+      "display_name": "宝箱房",
+      "platforms": [
+        [0, 70, 240, 16]
+      ],
+      "enemies": []
+    },
+    "SHOP": {
+      "display_name": "商店",
+      "platforms": [],
+      "enemies": []
+    },
+    "BOSS": {
+      "display_name": "首领房",
+      "platforms": [
+        [-430, 70, 160, 16],
+        [430, 70, 160, 16],
+        [0, 150, 220, 16]
+      ],
+      "enemies": ["bandit", "bandit", "bandit", "bandit", "bandit", "bandit", "bandit", "bandit"]
+    }
+  }
+}

@@ -1,0 +1,24 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/core/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/world/arena.gd" id="2_arena"]
+[ext_resource type="Script" path="res://scripts/combat/combat_director.gd" id="3_director"]
+[ext_resource type="Script" path="res://scripts/debug/debug_console.gd" id="4_console"]
+[ext_resource type="Script" path="res://scripts/debug/hud.gd" id="5_hud"]
+
+[node name="Main" type="Node2D"]
+script = ExtResource("1_main")
+
+[node name="Arena" type="Node2D" parent="."]
+script = ExtResource("2_arena")
+
+[node name="CombatDirector" type="Node" parent="."]
+script = ExtResource("3_director")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+layer = 5
+script = ExtResource("5_hud")
+
+[node name="DebugConsole" type="CanvasLayer" parent="."]
+layer = 10
+script = ExtResource("4_console")

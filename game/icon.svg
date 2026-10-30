@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="16" fill="#1b1a22"/>
+  <!-- 一轮弯月，武侠意象 -->
+  <path d="M92 22a46 46 0 1 0 0 84 38 38 0 1 1 0-84z" fill="#e8d9a0"/>
+  <!-- 一道刀光 -->
+  <path d="M14 104L74 34l10 8L24 112z" fill="#c0392b"/>
+  <path d="M22 96L78 40" stroke="#f5e6c8" stroke-width="3" stroke-linecap="round"/>
+</svg>

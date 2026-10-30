@@ -1,0 +1,39 @@
+# 统一换行符，避免 Windows / macOS 协作者之间产生无意义的整文件 diff
+* text=auto eol=lf
+
+# ---------- 文本文件：强制 LF ----------
+*.gd        text eol=lf
+*.tscn      text eol=lf
+*.tres      text eol=lf
+*.godot     text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.ps1       text eol=lf
+*.sh        text eol=lf
+*.cfg       text eol=lf
+*.import    text eol=lf
+
+# ---------- 二进制资源：禁止换行符转换、禁止 diff ----------
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.webp      binary
+*.gif       binary
+*.svg       text eol=lf
+*.ogg       binary
+*.wav       binary
+*.mp3       binary
+*.ttf       binary
+*.otf       binary
+*.woff      binary
+*.woff2     binary
+
+# ---------- 美术源文件：走 Git LFS（首次使用前请先执行 git lfs install） ----------
+# 说明：以下规则在仓库体积变大后才需要开启。开启前请先安装 Git LFS，
+#       否则推送会失败。详细步骤见 docs/01-工具清单.md。
+# *.psd     filter=lfs diff=lfs merge=lfs -text
+# *.aseprite filter=lfs diff=lfs merge=lfs -text
+# *.ase     filter=lfs diff=lfs merge=lfs -text
+# *.spine   filter=lfs diff=lfs merge=lfs -text

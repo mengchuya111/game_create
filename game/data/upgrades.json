@@ -1,0 +1,113 @@
+{
+  "_readme": [
+    "局内心法（强化）配置表。改数值不需要改任何代码。",
+    "",
+    "每间战斗/精英/首领房清空后，会从本表里按稀有度权重抽 3 条给玩家三选一。",
+    "抽取结果只依赖『本局种子 + 房间序号 + 已获得强化数』，所以同一个种子永远抽到同样的选项。",
+    "",
+    "字段说明：",
+    "  display_name  显示名",
+    "  description   一句话效果说明（会原样显示在奖励面板上，改效果时记得同步改这里）",
+    "  rarity        common / rare / epic，权重见下方 rarity_weights",
+    "  max_stacks    最多能叠几层，叠满后不会再抽到",
+    "  effects       实际效果，键名与 RunState 的统计方法一一对应：",
+    "                  damage_multiplier  全招式伤害加成（加法，0.15 = +15%）",
+    "                  max_hp             生命上限加成（点数）",
+    "                  move_speed         移速加成（加法，0.10 = +10%）",
+    "                  dash_cooldown      冲刺冷却减少的帧数",
+    "                  lifesteal          造成伤害的吸血比例（0.06 = 6%）",
+    "                  coin_multiplier    内力获取加成（0.5 = +50%）",
+    "                  room_heal          每间房清空后回复的生命值",
+    "",
+    "数值上限写在 scripts/core/run_state.gd 顶部（DAMAGE_BONUS_CAP 等），",
+    "防止无限叠加把平衡彻底冲垮。改上限前先问一句：这局还剩下什么难度？"
+  ],
+
+  "rarity_weights": {
+    "common": 100,
+    "rare": 40,
+    "epic": 12
+  },
+
+  "upgrades": {
+    "blade_edge": {
+      "display_name": "刀法精进",
+      "description": "所有招式伤害 +15%",
+      "rarity": "common",
+      "max_stacks": 5,
+      "effects": { "damage_multiplier": 0.15 }
+    },
+
+    "iron_body": {
+      "display_name": "铁布衫",
+      "description": "生命上限 +20",
+      "rarity": "common",
+      "max_stacks": 5,
+      "effects": { "max_hp": 20 }
+    },
+
+    "light_step": {
+      "display_name": "轻身术",
+      "description": "移动速度 +10%",
+      "rarity": "common",
+      "max_stacks": 3,
+      "effects": { "move_speed": 0.10 }
+    },
+
+    "lucky_coin": {
+      "display_name": "财运亨通",
+      "description": "击杀获得的内力 +50%",
+      "rarity": "common",
+      "max_stacks": 3,
+      "effects": { "coin_multiplier": 0.5 }
+    },
+
+    "flowing_qi": {
+      "display_name": "行气诀",
+      "description": "冲刺冷却 -4 帧",
+      "rarity": "rare",
+      "max_stacks": 3,
+      "effects": { "dash_cooldown": 4 }
+    },
+
+    "blood_drink": {
+      "display_name": "血饮",
+      "description": "造成伤害的 6% 转化为生命",
+      "rarity": "rare",
+      "max_stacks": 3,
+      "effects": { "lifesteal": 0.06 }
+    },
+
+    "heavy_hand": {
+      "display_name": "沉劲",
+      "description": "所有招式伤害 +30%",
+      "rarity": "rare",
+      "max_stacks": 3,
+      "effects": { "damage_multiplier": 0.30 }
+    },
+
+    "mending_qi": {
+      "display_name": "回春诀",
+      "description": "每间房清空后回复 18 点生命",
+      "rarity": "rare",
+      "max_stacks": 3,
+      "effects": { "room_heal": 18 }
+    },
+
+    "vajra_body": {
+      "display_name": "金刚不坏",
+      "description": "生命上限 +40，伤害 +10%",
+      "rarity": "epic",
+      "max_stacks": 2,
+      "effects": { "max_hp": 40, "damage_multiplier": 0.10 }
+    },
+
+    "swift_shadow": {
+      "display_name": "疾影",
+      "description": "移动速度 +25%，冲刺冷却 -6 帧",
+      "rarity": "epic",
+      "max_stacks": 1,
+      "effects": { "move_speed": 0.25, "dash_cooldown": 6 }
+    }
+  }
+}

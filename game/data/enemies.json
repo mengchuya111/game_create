@@ -1,0 +1,40 @@
+{
+  "_readme": [
+    "敌人原型数据。arena.gd 按房间的敌人预算，从房间模板的 enemies 列表里循环取原型来刷怪。",
+    "training_dummy 是训练木桩：血极厚、不反击、死后自动复活。",
+    "  它的唯一用途是让你反复验证打击感（顿帧、震屏、连段、击退）。",
+    "  手感没调好之前，不要急着让敌人会反击 —— 否则每次测试条件都不同，调出来的是噪音。",
+    "bandit 是最简单的会走会打的敌人，用来验证『挨打』这条链路。",
+    "",
+    "immortal 字段：打不死的单位。带这个标记的原型**不允许出现在需要清空的房间里** ——",
+    "  清房判定是『所有敌人死亡』，放一个打不死的进去，这间房就永远清不掉，整局卡死。",
+    "  这不是理论风险：COMBAT 模板的敌人池第一位就是 training_dummy，",
+    "  结果是每间战斗房都有一个永久存在的木桩，玩家永远打不完。"
+  ],
+
+  "training_dummy": {
+    "display_name": "训练木桩",
+    "behavior": "dummy",
+    "immortal": true,
+    "max_hp": 9999,
+    "defense": 0,
+    "weight": 2.0,
+    "respawn_delay": 1.2,
+    "coin_reward": 0
+  },
+
+  "bandit": {
+    "display_name": "山贼",
+    "behavior": "walker",
+    "max_hp": 60,
+    "defense": 10,
+    "weight": 1.0,
+    "max_poise": 40,
+    "move_speed": 72.0,
+    "detect_range": 260.0,
+    "attack_id": "enemy_swipe",
+    "attack_interval_frames": 96,
+    "respawn_delay": 0.0,
+    "coin_reward": 3
+  }
+}
