@@ -39,17 +39,27 @@ cd dream_start
 
 ### 2. 装 Godot（唯一必须手动装的工具）
 
-去 [Godot 官网](https://godotengine.org/download/windows/) 下载 **4.7.2-stable** 的 Windows 版，
+**推荐跑仓库里的脚本** —— 它会自动下载、校验版本，并且在某个下载源不通时**自动换下一个源**：
+
+```powershell
+powershell -File tools\install-tools.ps1
+```
+
+也可以手动装：去 [Godot 官网](https://godotengine.org/download/windows/) 下载 **4.7.2-stable** 的 Windows 版，
 把 `Godot_v4.7.2-stable_win64.exe` 和 `Godot_v4.7.2-stable_win64_console.exe`
 两个文件放进仓库根目录的 `.tooling/` 文件夹里。
 
-```powershell
-# 或者直接跑仓库里的安装脚本（会自动下载并校验版本）
-pwsh -File tools/install-tools.ps1
-```
+> ⚠️ **国内网络注意**：`github.com` 和 `downloads.godotengine.org` 经常出现
+> **"HTTP 头能拿到、但一开始传数据就卡死"** 的情况 —— 所以"能 ping 通"不代表能下载。
+> 脚本会自动改用 GitHub 加速源（实测约 0.24 MB/s，82 MB 约 6 分钟）。
+> 三个源都失败时，脚本会直接打印可以手动打开的加速链接。
+> 详见 [docs/01-工具清单.md](docs/01-工具清单.md) 第 5 节。
 
 > `.tooling/` 已经被 `.gitignore` 排除，**不进版本库**（Godot 二进制有 170MB+）。
 > 每个人自己装一份，但**版本号必须完全一致**。
+
+> ⚠️ 本机只装了 Windows PowerShell 5.1，**没有 `pwsh`（PowerShell 7）**。
+> 上面用 `powershell` 是刻意的。
 
 ### 3. 跑起来看看
 
