@@ -64,6 +64,19 @@ GODOT=".tooling/Godot_v4.7.2-stable_win64_console.exe"
 
 **验收标准：② 和 ③ 的退出码都必须是 0。** 有一个不是 0 就不算完成，不要提交。
 
+嫌三条命令麻烦，也可以跑一条：
+
+```bash
+pwsh -File tools/verify.ps1
+```
+
+它跑完三条命令、解析出数字、和 `tools/test-baseline.json` 对比。**数字下降会直接报失败**——
+因为"单元测试从 225 个变成 217 个"时，结论行**照样**打印「全部通过 ✓」，只贴最后一行是看不出来的。
+确实新增了测试之后，用 `-UpdateBaseline` 抬高基线。
+
+> ⚠️ 本机只装了 Windows PowerShell 5.1，**没有 `pwsh`**。上面写 `pwsh` 是通用写法，
+> 在本机请用 `powershell -File tools\verify.ps1`。
+
 ### 测试输出里哪些 ERROR / WARNING 是正常的
 
 单元测试会故意构造错误输入来验证容错逻辑，下面这些**是预期的，不是失败**：

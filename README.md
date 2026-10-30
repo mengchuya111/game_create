@@ -89,6 +89,27 @@ $GODOT = ".tooling\Godot_v4.7.2-stable_win64_console.exe"
 两条命令都返回 `0` 才算通过。看到 `ERROR:` 不要慌，先看最后的结论行——
 单元测试会**故意**构造错误输入来验证容错逻辑，那些报错是预期的（完整清单见 [AGENTS.md](AGENTS.md#测试输出里哪些-error--warning-是正常的)）。
 
+**懒得记这三条？跑这一条就行：**
+
+```powershell
+powershell -File tools\verify.ps1
+```
+
+它按顺序跑完三条命令，解析出套件 / 方法 / 断言 / 检查项的数量，和 `tools/test-baseline.json`
+里的基线对比，最后给你一句话结论。
+
+**它专门抓一种肉眼看不出来的问题**：单元测试从 225 个变成 217 个时，结论行**照样**打印
+「全部通过 ✓」。只有对比数字才看得出来。数字掉了它就直接报失败，并告诉你哪一项退步了。
+
+确实新增了测试之后，用 `-UpdateBaseline` 把基线抬上去：
+
+```powershell
+powershell -File tools\verify.ps1 -UpdateBaseline
+```
+
+> ⚠️ 本机只装了 Windows PowerShell 5.1，**没有 `pwsh`（PowerShell 7）**。
+> 上面用 `powershell` 是刻意的；如果你装了 pwsh，换成 `pwsh` 也一样。
+
 ### 5. 录一段演示（截图 / 视频）
 
 不想自己打，想让游戏自己打一段给你看：
