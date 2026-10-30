@@ -1,39 +1,48 @@
 ﻿<#
 .SYNOPSIS
-    把本仓库推送到 GitHub。第一次跑会自动建仓库，之后跑就是普通推送。
+    把本仓库推送到 GitHub。自动适配"HTTPS 连不上 github.com，但 SSH 能通"的网络环境。
 
 .DESCRIPTION
-    这个脚本做四件事：
-      1. 检查前置条件（git、gh、GitHub 登录状态）
-      2. 确认本地仓库已初始化、且至少有一次提交
-      3. 在 GitHub 上创建仓库（如果还没建）
-      4. 设置 remote 并推送
+    这个脚本专门处理国内常见的网络情况：github.com 的 443 端口 TCP 能握手，
+    但 TLS 之后的数据被拦掉，表现为"网页打不开 / git push 卡住超时"。
+    而 SSH（22 或 443 端口）通常是通的。
 
-    为什么用 gh 而不是让你手动建仓库：
-      手动建仓库要复制粘贴 remote 地址，很容易把 https/ssh 搞错，
-      而且第一次推送忘了 -u 的话，之后每次都要写全参数。
+    脚本会：
+      1. 检查前置条件（git / gh / 网络）
+      2. 自动探测该用 HTTPS 还是 SSH 推送
+      3. 确认本地仓库已初始化且有提交
+      4. 创建 GitHub 仓库（需要 gh 已登录）或提示你去网页建
+      5. 配好 remote 并推送
 
 .PARAMETER RepoName
     GitHub 上的仓库名。默认 wuxia-roguelike。
 
 .PARAMETER Visibility
-    private（默认）或 public。建议先 private，确认没有敏感信息再公开。
+    private（默认）或 public。建议先 private。
+
+.PARAMETER Protocol
+    auto（默认，自动探测）/ ssh / https。网络受限时用 ssh。
+
+.PARAMETER SkipCreate
+    仓库已经在网页上建好了，跳过创建步骤直接推送。
+
+.PARAMETER Diagnose
+    只做网络诊断，不推送。搞不清网络状况时先跑这个。
 
 .PARAMETER Description
     仓库简介。
 
 .EXAMPLE
-    # 第一次：建一个私有仓库并推送
-    pwsh -File tools/push-to-github.ps1
+    # 先看清楚网络能通什么
+    pwsh -File tools/push-to-github.ps1 -Diagnose
 
 .EXAMPLE
-    # 建一个公开仓库，换个名字
-    pwsh -File tools/push-to-github.ps1 -RepoName my-wuxia-game -Visibility public
+    # 已经在网页上建好空仓库，直接推（推荐）
+    pwsh -File tools/push-to-github.ps1 -SkipCreate
 
-.NOTES
-    如果脚本提示"还没登录 GitHub"，先手动跑一次：
-        gh auth login
-    这一步必须在浏览器里完成，脚本没法替你点。
+.EXAMPLE
+    # 强制走 SSH（网络受限时）
+    pwsh -File tools/push-to-github.ps1 -Protocol ssh
 #>
 
 [CmdletBinding()]
@@ -41,34 +50,53 @@ param(
     [string]$RepoName = 'wuxia-roguelike',
     [ValidateSet('private', 'public')]
     [string]$Visibility = 'private',
+    [ValidateSet('auto', 'ssh', 'https')]
+    [string]$Protocol = 'auto',
+    [switch]$SkipCreate,
+    [switch]$Diagnose,
     [string]$Description = '武侠风横版 2D 肉鸽动作游戏 · Godot 4 + GDScript 可验证骨架'
 )
 
-$ErrorActionPreference = 'Stop'
+# 这里刻意用 'Continue' 而不是 'Stop'。
+#
+# 原因：Windows PowerShell 5.1 下，$ErrorActionPreference = 'Stop' 会把
+# **原生命令写到 stderr 的内容**当成终止性错误。而 git / gh / ssh 都会往 stderr 写正常信息
+# —— 最典型的是 `ssh -T git@github.com`，认证成功时它往 stderr 打印
+# "Hi xxx! You've successfully authenticated, but GitHub does not provide shell access."，
+# 退出码是 1。用 'Stop' 会让脚本在这个"其实成功"的地方直接中断（已实测踩到）。
+#
+# 所以：错误处理一律显式检查 $LASTEXITCODE，需要终止时调用 Stop-WithHelp。
+$ErrorActionPreference = 'Continue'
 
 function Write-Step([string]$Text) {
     Write-Host ''
     Write-Host "==> $Text" -ForegroundColor Cyan
 }
-
-function Write-Ok([string]$Text) {
-    Write-Host "    [OK] $Text" -ForegroundColor Green
-}
-
-function Write-Warn2([string]$Text) {
-    Write-Host "    [!]  $Text" -ForegroundColor Yellow
-}
+function Write-Ok([string]$Text)    { Write-Host "    [OK] $Text" -ForegroundColor Green }
+function Write-Warn2([string]$Text) { Write-Host "    [!]  $Text" -ForegroundColor Yellow }
+function Write-Info([string]$Text)  { Write-Host "    $Text" -ForegroundColor Gray }
 
 function Stop-WithHelp([string]$Problem, [string[]]$HowToFix) {
     Write-Host ''
     Write-Host "无法继续：$Problem" -ForegroundColor Red
     Write-Host ''
     Write-Host '请按顺序执行下面的命令，然后重新运行本脚本：' -ForegroundColor Yellow
-    foreach ($line in $HowToFix) {
-        Write-Host "    $line" -ForegroundColor White
-    }
+    foreach ($line in $HowToFix) { Write-Host "    $line" -ForegroundColor White }
     Write-Host ''
     exit 1
+}
+
+# 探测某个 URL 是否真的能用。
+# 注意：这里必须测"能不能拿到 HTTP 响应"，不能只测 TCP 端口通不通 ——
+# 被拦的网络里，TCP 三次握手经常是成功的，卡死在后面的 TLS 阶段。
+function Test-HttpReachable([string]$Url, [int]$TimeoutSec = 8) {
+    try {
+        # 显式 -ErrorAction Stop：全局是 Continue，不这样写 try/catch 抓不到失败
+        $null = Invoke-WebRequest -Uri $Url -TimeoutSec $TimeoutSec -UseBasicParsing -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
 }
 
 # ---------------------------------------------------------------- 定位仓库根目录
@@ -77,44 +105,118 @@ function Stop-WithHelp([string]$Problem, [string[]]$HowToFix) {
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path (Join-Path $repoRoot 'AGENTS.md'))) {
     Stop-WithHelp "在 $repoRoot 里找不到 AGENTS.md，这看起来不是本项目的根目录。" @(
-        "确认脚本位于 <仓库根>/tools/push-to-github.ps1"
+        '确认脚本位于 <仓库根>/tools/push-to-github.ps1'
     )
 }
 Write-Host "仓库根目录：$repoRoot"
 
+# ---------------------------------------------------------------- 0. 诊断模式
+if ($Diagnose) {
+    Write-Step '网络诊断：GitHub 各端点可达性'
+    Write-Info 'HTTPS 到 github.com 被拦时 TCP 握手仍会成功，所以必须测真实 HTTP 响应。'
+    Write-Host ''
+    $endpoints = @(
+        @{ n = 'api.github.com';      u = 'https://api.github.com' },
+        @{ n = 'github.com';          u = 'https://github.com' },
+        @{ n = 'codeload.github.com'; u = 'https://codeload.github.com' }
+    )
+    foreach ($e in $endpoints) {
+        $ok = 0
+        for ($i = 1; $i -le 2; $i++) { if (Test-HttpReachable $e.u) { $ok++ } }
+        $color = if ($ok -gt 0) { 'Green' } else { 'Red' }
+        Write-Host ("    {0,-24} {1}" -f $e.n, $(if ($ok -gt 0) { '通' } else { '不通' })) -ForegroundColor $color
+    }
+
+    Write-Host ''
+    Write-Host '    SSH 通道（GitHub 给受限网络准备的）：' -ForegroundColor White
+    $probe = ssh -T -p 443 git@ssh.github.com -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes 2>&1 | Out-String
+    $sshAuthed = ($probe -match 'successfully authenticated')
+    if ($sshAuthed) {
+        Write-Host '      ssh.github.com:443   通，且已认证' -ForegroundColor Green
+    } elseif ($probe -match 'Permission denied') {
+        Write-Host '      ssh.github.com:443   SSH 通，但公钥没加到 GitHub' -ForegroundColor Yellow
+    } else {
+        Write-Host '      ssh.github.com:443   不通' -ForegroundColor Red
+    }
+
+    Write-Host ''
+    Write-Host '    结论：' -ForegroundColor White
+    $httpsOk = Test-HttpReachable 'https://github.com'
+    if (-not $httpsOk -and $sshAuthed) {
+        Write-Host '      HTTPS 到 github.com 被拦，但 SSH 可用。' -ForegroundColor Green
+        Write-Host '      → 用 SSH 推送： pwsh -File tools/push-to-github.ps1 -Protocol ssh' -ForegroundColor Green
+    } elseif ($httpsOk) {
+        Write-Host '      HTTPS 正常，用默认参数跑即可。' -ForegroundColor Green
+    } else {
+        Write-Host '      HTTPS 和 SSH 都不通。请先打开代理 / VPN 再重跑。' -ForegroundColor Red
+    }
+    exit 0
+}
+
 # ---------------------------------------------------------------- 1. 前置检查
 Write-Step '检查前置条件'
 
-$git = Get-Command git -ErrorAction SilentlyContinue
-if (-not $git) {
-    Stop-WithHelp '没有找到 git。' @(
-        'winget install --id Git.Git -e',
-        '装完之后关掉当前终端再重开（PATH 需要刷新）'
-    )
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    Stop-WithHelp '没有找到 git。' @('winget install --id Git.Git -e', '装完关掉终端重开（PATH 要刷新）')
 }
 Write-Ok "git 已安装：$(git --version)"
 
-$gh = Get-Command gh -ErrorAction SilentlyContinue
-if (-not $gh) {
-    Stop-WithHelp '没有找到 GitHub CLI（gh）。' @(
-        'winget install --id GitHub.cli -e',
-        '装完之后关掉当前终端再重开（PATH 需要刷新）'
+$ghCmd = Get-Command gh -ErrorAction SilentlyContinue
+$ghAuthed = $false
+if ($ghCmd) {
+    & gh auth status *> $null
+    $ghAuthed = ($LASTEXITCODE -eq 0)
+    if ($ghAuthed) { Write-Ok 'gh 已安装并登录' }
+    else { Write-Warn2 'gh 已安装但未登录（不影响 SSH 推送，只影响自动建仓库）' }
+} else {
+    Write-Warn2 '没有安装 gh（不影响 SSH 推送，只影响自动建仓库）'
+}
+
+# ---------------------------------------------------------------- 2. 选协议
+Write-Step '确定推送协议'
+
+$httpsOk = Test-HttpReachable 'https://github.com'
+$sshProbe = ssh -T -p 443 git@ssh.github.com -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes 2>&1 | Out-String
+$sshOk = ($sshProbe -match 'successfully authenticated')
+
+Write-Info "HTTPS 到 github.com：$(if ($httpsOk) { '通' } else { '不通' })"
+Write-Info "SSH（443 端口）：    $(if ($sshOk) { '通，且已认证' } else { '不通或未认证' })"
+
+$useSsh = $false
+switch ($Protocol) {
+    'ssh'   { $useSsh = $true }
+    'https' { $useSsh = $false }
+    'auto'  {
+        if ($httpsOk) { $useSsh = $false }
+        elseif ($sshOk) { $useSsh = $true }
+        else {
+            Stop-WithHelp 'HTTPS 和 SSH 都连不上 GitHub。' @(
+                '先打开你的代理 / VPN，然后重跑本脚本。',
+                '或者先诊断： pwsh -File tools/push-to-github.ps1 -Diagnose'
+            )
+        }
+    }
+}
+
+if ($useSsh -and -not $sshOk) {
+    Stop-WithHelp '要求走 SSH，但 SSH 认证没通过。' @(
+        '检查公钥是否已加到 GitHub：',
+        '  Get-Content $env:USERPROFILE\.ssh\id_rsa.pub',
+        '粘到 https://github.com/settings/keys 之后自测：',
+        '  ssh -T -p 443 git@ssh.github.com'
     )
 }
-Write-Ok "gh 已安装：$(gh --version | Select-Object -First 1)"
 
-# gh auth status 在未登录时返回非 0，用 $LASTEXITCODE 判断，不要让异常中断脚本
-& gh auth status *> $null
-if ($LASTEXITCODE -ne 0) {
-    Stop-WithHelp 'GitHub CLI 还没有登录。' @(
-        'gh auth login',
-        '  选 GitHub.com → HTTPS → 用浏览器登录（会打开网页，需要你自己点授权）',
-        '登录完再运行本脚本'
-    )
+if ($useSsh) {
+    # 把 github.com 的 HTTPS 地址全部改写为 SSH。
+    # 这样即使某个子模块或工具内部写死了 https 地址，也不会再撞上被拦的 HTTPS。
+    git config --global url."git@github.com:".insteadOf "https://github.com/"
+    Write-Ok '已配置 git：github.com 的 HTTPS 地址自动改写为 SSH'
+} else {
+    Write-Ok '将使用 HTTPS 推送'
 }
-Write-Ok 'GitHub 已登录'
 
-# ---------------------------------------------------------------- 2. 本地仓库状态
+# ---------------------------------------------------------------- 3. 本地仓库
 Write-Step '检查本地仓库'
 
 Push-Location $repoRoot
@@ -122,105 +224,116 @@ try {
     & git rev-parse --git-dir *> $null
     if ($LASTEXITCODE -ne 0) {
         Write-Warn2 '当前还不是 git 仓库，正在初始化…'
-        & git init | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw 'git init 失败' }
+        & git init -b main | Out-Null
         Write-Ok '已初始化 git 仓库'
     } else {
         Write-Ok 'git 仓库已存在'
     }
 
-    # 有没有提交？没有提交就没法推送。
     & git rev-parse --verify HEAD *> $null
-    $hasCommit = ($LASTEXITCODE -eq 0)
-    if (-not $hasCommit) {
+    if ($LASTEXITCODE -ne 0) {
         Write-Warn2 '还没有任何提交，正在创建第一次提交…'
         & git add -A
-        if ($LASTEXITCODE -ne 0) { throw 'git add 失败' }
         & git commit -m 'chore: 初始化仓库（武侠肉鸽可验证骨架）'
         if ($LASTEXITCODE -ne 0) {
             Stop-WithHelp '创建第一次提交失败。' @(
                 '常见原因：git 还没配置用户名和邮箱。执行：',
                 '  git config --global user.name  "你的名字"',
-                '  git config --global user.email "你的邮箱"',
-                '然后重新运行本脚本'
+                '  git config --global user.email "你的邮箱"'
             )
         }
         Write-Ok '已创建第一次提交'
     } else {
-        $count = (& git rev-list --count HEAD).Trim()
-        Write-Ok "已有 $count 次提交"
+        Write-Ok "已有 $((& git rev-list --count HEAD).Trim()) 次提交"
     }
 
-    # 工作区是否干净（不干净只警告，不阻止 —— 推送已提交的内容是安全的）
     $dirty = & git status --porcelain
     if ($dirty) {
-        $dirtyCount = @($dirty).Count
-        Write-Warn2 "工作区有 $dirtyCount 处未提交的改动，它们不会被推送。"
-        Write-Warn2 '要一起推的话，先执行： git add -A ; git commit -m "你的说明"'
+        Write-Warn2 "工作区有 $(@($dirty).Count) 处未提交的改动，它们不会被推送。"
     } else {
         Write-Ok '工作区干净'
     }
 
-    # ------------------------------------------------------------ 3. 创建 GitHub 仓库
-    Write-Step "检查 GitHub 上的仓库 $RepoName"
+    # ------------------------------------------------------------ 4. 确定仓库地址
+    Write-Step "确定仓库地址：$RepoName"
 
-    $remoteUrl = $null
-    & git remote get-url origin *> $null
-    if ($LASTEXITCODE -eq 0) {
-        $remoteUrl = (& git remote get-url origin).Trim()
-        Write-Ok "已配置 remote origin：$remoteUrl"
-    } else {
-        # 先看这个仓库名在 GitHub 上是不是已经被占了
-        & gh repo view $RepoName *> $null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Warn2 "GitHub 上已经存在名为 $RepoName 的仓库，将直接关联它。"
-            Write-Warn2 '如果那是别人的仓库，你会推送失败 —— 那就换个名字：-RepoName 别的名字'
-            & gh repo set-default $RepoName *> $null
-            $login = (& gh api user --jq .login).Trim()
-            $remoteUrl = "https://github.com/$login/$RepoName.git"
-            & git remote add origin $remoteUrl
-            Write-Ok "已关联 remote：$remoteUrl"
-        } else {
-            Write-Host "    正在创建 $Visibility 仓库…" -ForegroundColor White
-            # --source=. --push 会把当前仓库作为源并直接推送，顺便把 origin 配好
-            & gh repo create $RepoName --$Visibility --source=. --remote=origin --push --description $Description
+    $owner = $null
+    if ($ghAuthed) {
+        $owner = (& gh api user --jq .login 2>$null).Trim()
+    }
+    if (-not $owner -and $sshProbe -match 'Hi ([A-Za-z0-9-]+)!') {
+        # 从 SSH 认证回显里抠用户名："Hi mengchuya111! You've successfully authenticated..."
+        $owner = $Matches[1]
+    }
+    if (-not $owner) {
+        Stop-WithHelp '无法确定你的 GitHub 用户名。' @('先跑 gh auth login，或用 SSH 自测一次： ssh -T -p 443 git@ssh.github.com')
+    }
+    Write-Ok "GitHub 账号：$owner"
+
+    $remoteUrl = if ($useSsh) { "git@github.com:$owner/$RepoName.git" } else { "https://github.com/$owner/$RepoName.git" }
+
+    # ------------------------------------------------------------ 5. 建仓库（可选）
+    $null = git ls-remote $remoteUrl HEAD 2>&1
+    $repoExists = ($LASTEXITCODE -eq 0)
+
+    if ($repoExists) {
+        Write-Ok '远端仓库已存在'
+    } elseif (-not $SkipCreate) {
+        if ($ghAuthed) {
+            Write-Step "在 GitHub 上创建 $Visibility 仓库 $RepoName"
+            & gh repo create "$owner/$RepoName" --$Visibility --description $Description
             if ($LASTEXITCODE -ne 0) {
-                Stop-WithHelp "创建仓库 $RepoName 失败。" @(
-                    '常见原因：',
-                    "  · 仓库名已被占用 → 换个名字： pwsh -File tools/push-to-github.ps1 -RepoName 别的名字",
-                    '  · 登录过期 → 重新跑 gh auth login',
-                    '  · 网络不通 → 检查代理'
+                Stop-WithHelp '创建仓库失败。' @(
+                    '常见原因：仓库名被占用 → 换名字： -RepoName 别的名字',
+                    '或登录过期 → gh auth login'
                 )
             }
-            Write-Ok "仓库已创建并推送完成"
-            Write-Host ''
-            $login = (& gh api user --jq .login).Trim()
-            Write-Host "    仓库地址：https://github.com/$login/$RepoName" -ForegroundColor Green
-            exit 0
+            Write-Ok '仓库已创建'
+        } else {
+            Stop-WithHelp "GitHub 上还没有 $RepoName 这个仓库，而 gh 没登录，脚本无法自动创建。" @(
+                '两个办法，选一个：',
+                '',
+                '  【办法一 · 推荐】在浏览器里建一个空仓库（30 秒，不用给任何人密码）：',
+                '      1. 打开 https://github.com/new',
+                "      2. Repository name 填： $RepoName",
+                '      3. 选 Private，不要勾 Add a README / .gitignore / license',
+                '      4. 点 Create repository',
+                '      5. 回来重新跑： pwsh -File tools/push-to-github.ps1 -SkipCreate',
+                '',
+                '  【办法二】让 gh 登录（本机 github.com 网页被拦，需要先开代理 / VPN）：',
+                '      gh auth login'
+            )
         }
     }
 
-    # ------------------------------------------------------------ 4. 推送
+    # ------------------------------------------------------------ 6. 推送
     Write-Step '推送到 GitHub'
 
-    # 当前分支名（Godot 项目常把默认分支设成 main 或 master，这里按实际来）
+    & git remote get-url origin *> $null
+    if ($LASTEXITCODE -eq 0) {
+        & git remote set-url origin $remoteUrl
+        Write-Ok "已更新 remote origin -> $remoteUrl"
+    } else {
+        & git remote add origin $remoteUrl
+        Write-Ok "已添加 remote origin -> $remoteUrl"
+    }
+
     $branch = (& git rev-parse --abbrev-ref HEAD).Trim()
-    Write-Host "    当前分支：$branch" -ForegroundColor White
+    Write-Info "当前分支：$branch"
 
     & git push -u origin $branch
     if ($LASTEXITCODE -ne 0) {
         Stop-WithHelp '推送失败。' @(
             '常见原因：',
             '  · 远端已有内容且历史不一致 → git pull --rebase origin ' + $branch,
-            '  · 没有推送权限 → 确认这是你自己的仓库',
-            '  · 登录过期 → gh auth login'
+            '  · 仓库还没建 → 见上面"办法一"',
+            '  · SSH 公钥没加 → https://github.com/settings/keys'
         )
     }
 
     Write-Ok '推送完成'
     Write-Host ''
-    $login = (& gh api user --jq .login).Trim()
-    Write-Host "    仓库地址：https://github.com/$login/$RepoName" -ForegroundColor Green
+    Write-Host "    仓库地址：https://github.com/$owner/$RepoName" -ForegroundColor Green
     Write-Host ''
 }
 finally {
