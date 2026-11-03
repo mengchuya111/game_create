@@ -15,7 +15,7 @@
       5. 配好 remote 并推送
 
 .PARAMETER RepoName
-    GitHub 上的仓库名。默认 wuxia-roguelike。
+    GitHub 上的仓库名。默认 game_create（本项目实际使用的仓库名）。
 
 .PARAMETER Visibility
     private（默认）或 public。建议先 private。
@@ -47,7 +47,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$RepoName = 'wuxia-roguelike',
+    [string]$RepoName = 'game_create',
     [ValidateSet('private', 'public')]
     [string]$Visibility = 'private',
     [ValidateSet('auto', 'ssh', 'https')]

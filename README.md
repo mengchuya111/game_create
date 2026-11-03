@@ -3,6 +3,14 @@
 > 一款**武侠风格的横版 2D 肉鸽动作游戏**（参考《死亡细胞》）。
 > 这个仓库目前是一个**能跑、能测、能被 AI 安全修改的骨架**，不是完整游戏。
 
+**仓库地址**：<https://github.com/mengchuya111/game_create>
+
+克隆：
+
+```bash
+git clone git@github.com:mengchuya111/game_create.git
+```
+
 [![Godot](https://img.shields.io/badge/Godot-4.7.2-478CBF?logo=godotengine&logoColor=white)](https://godotengine.org/)
 [![Language](https://img.shields.io/badge/language-GDScript-355570)](https://docs.godotengine.org/en/stable/tutorials/scripting/gdscript/)
 [![Tests](https://img.shields.io/badge/tests-225%20passed-brightgreen)]()
