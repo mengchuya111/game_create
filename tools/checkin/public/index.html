@@ -1,0 +1,984 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>监管打卡</title>
+<!--
+  为什么所有东西都内联在一个文件里：
+  1. 手机通过局域网 http://IP:8080 打开，不能依赖任何 CDN（可能没外网）；
+  2. 没有构建步骤，改一行刷新就能看到，队友克隆下来直接能用；
+  3. 只有这一个文件要维护，不会出现"改了 css 忘了引"这类问题。
+-->
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #181b22;
+    --card-2: #1f232c;
+    --line: #2a2f3a;
+    --text: #e6e9ef;
+    --muted: #8b93a3;
+    --accent: #5b8def;
+    --ok: #3ddc97;
+    --warn: #f5a524;
+    --bad: #ef5b5b;
+    --radius: 14px;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    /* iPhone 刘海屏安全区 */
+    padding: max(12px, env(safe-area-inset-top)) 12px max(80px, env(safe-area-inset-bottom));
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  /* ---------------------------------------------------------------- 顶部 */
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 2px 14px;
+  }
+
+  .date-block { min-width: 0; }
+  .date-main {
+    font-size: 19px;
+    font-weight: 650;
+    letter-spacing: .2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .date-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+  .streak {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 7px 14px;
+    font-size: 13px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .streak b { font-size: 17px; color: var(--warn); }
+  .streak.zero b { color: var(--muted); }
+
+  /* ---------------------------------------------------------------- 进度环 */
+
+  .progress-card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 14px;
+  }
+
+  .ring { width: 92px; height: 92px; flex-shrink: 0; position: relative; }
+  .ring svg { transform: rotate(-90deg); display: block; }
+  .ring .track { stroke: var(--line); }
+  .ring .fill {
+    stroke: var(--accent);
+    stroke-linecap: round;
+    transition: stroke-dashoffset .45s cubic-bezier(.4,0,.2,1), stroke .3s;
+  }
+  .ring.complete .fill { stroke: var(--ok); }
+  .ring-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 21px;
+    font-weight: 700;
+  }
+  .ring-label small { font-size: 10.5px; font-weight: 500; color: var(--muted); margin-top: -1px; }
+
+  .progress-meta { min-width: 0; }
+  .progress-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .progress-hint { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .progress-hint.ok { color: var(--ok); }
+
+  /* ---------------------------------------------------------------- 分页签 */
+
+  .tabs {
+    display: flex;
+    gap: 6px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 11px;
+    padding: 4px;
+    margin-bottom: 14px;
+  }
+  .tab {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 14px;
+    padding: 9px 4px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background .18s, color .18s;
+  }
+  .tab.active { background: var(--card-2); color: var(--text); font-weight: 600; }
+
+  /* ---------------------------------------------------------------- 清单 */
+
+  .list { display: flex; flex-direction: column; gap: 8px; }
+
+  .item {
+    display: flex;
+    align-items: flex-start;
+    gap: 13px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px 15px;
+    cursor: pointer;
+    transition: background .16s, border-color .16s, transform .08s;
+    user-select: none;
+    min-height: 56px;
+  }
+  .item:active { transform: scale(.988); }
+  .item.done { background: #16211c; border-color: #234436; }
+  .item.done .item-text { color: var(--muted); text-decoration: line-through; text-decoration-color: #3ddc9755; }
+
+  .check {
+    width: 23px;
+    height: 23px;
+    border: 2px solid #3a4150;
+    border-radius: 7px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background .16s, border-color .16s;
+  }
+  .item.done .check { background: var(--ok); border-color: var(--ok); }
+  .check svg { width: 14px; height: 14px; opacity: 0; transform: scale(.5); transition: opacity .16s, transform .16s; }
+  .item.done .check svg { opacity: 1; transform: scale(1); }
+
+  .item-body { flex: 1; min-width: 0; }
+  .item-text { font-size: 15px; line-height: 1.45; word-break: break-word; }
+  .item-sheet { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+
+  /* 编辑模式下的小垃圾桶 */
+  .del {
+    flex-shrink: 0;
+    width: 30px; height: 30px;
+    border: 0; background: transparent;
+    color: var(--bad);
+    font-size: 17px;
+    cursor: pointer;
+    border-radius: 8px;
+    display: none;
+    align-items: center; justify-content: center;
+  }
+  body.editing .item { cursor: default; }
+  body.editing .del { display: flex; }
+  body.editing .item:active { transform: none; }
+
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+    padding: 40px 20px;
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+  }
+
+  /* ---------------------------------------------------------------- 历史 */
+
+  .history-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+    gap: 7px;
+  }
+  .day-cell {
+    aspect-ratio: 1;
+    border-radius: 9px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: var(--muted);
+    gap: 1px;
+    position: relative;
+    overflow: hidden;
+  }
+  .day-cell b { font-size: 13px; color: var(--text); font-weight: 600; }
+  .day-cell .bar {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    background: var(--accent);
+    opacity: .22;
+  }
+  .day-cell.full { border-color: #2c5a45; }
+  .day-cell.full .bar { background: var(--ok); opacity: .3; }
+  .day-cell.today { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .day-cell.blank { opacity: .45; }
+
+  .legend {
+    display: flex;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+  /* ---------------------------------------------------------------- 底部工具栏 */
+
+  .toolbar {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+    background: linear-gradient(to top, var(--bg) 55%, transparent);
+    justify-content: center;
+  }
+  .toolbar-inner { display: flex; gap: 8px; max-width: 720px; width: 100%; }
+
+  .btn {
+    flex: 1;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    padding: 12px 10px;
+    border-radius: 11px;
+    cursor: pointer;
+    transition: background .16s, border-color .16s;
+    white-space: nowrap;
+  }
+  .btn:active { background: var(--card-2); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.primary:active { background: #4a7ce0; }
+  .btn.ghost { flex: 0 0 auto; padding: 12px 16px; }
+
+  /* ---------------------------------------------------------------- 弹层 */
+
+  dialog {
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--text);
+    border-radius: 16px;
+    padding: 0;
+    width: min(560px, calc(100vw - 32px));
+    max-height: 84vh;
+  }
+  dialog::backdrop { background: rgba(0,0,0,.62); backdrop-filter: blur(2px); }
+  .dlg-head {
+    padding: 16px 18px 12px;
+    font-weight: 650;
+    font-size: 16px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .dlg-body { padding: 16px 18px; overflow-y: auto; max-height: 60vh; }
+  .dlg-foot {
+    padding: 12px 18px 16px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .dlg-foot .btn { flex: 0 0 auto; padding: 10px 18px; }
+
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
+  .field input, .field textarea, .field select {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    color: var(--text);
+    font: inherit;
+    font-size: 14.5px;
+    padding: 11px 12px;
+    border-radius: 9px;
+    resize: vertical;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .field textarea { min-height: 72px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 5px; line-height: 1.5; }
+
+  /* 顶部同步状态条 */
+  .toast {
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top));
+    left: 50%;
+    transform: translate(-50%, -140%);
+    background: var(--card-2);
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-size: 13px;
+    padding: 9px 16px;
+    border-radius: 999px;
+    transition: transform .28s cubic-bezier(.4,0,.2,1);
+    z-index: 100;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .toast.show { transform: translate(-50%, 0); }
+  .toast.err { border-color: var(--bad); color: #ffd0d0; }
+
+  .note-area {
+    width: 100%;
+    background: var(--card);
+    border: 1px solid var(--line);
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    resize: vertical;
+    min-height: 64px;
+    margin-top: 14px;
+  }
+  .note-area:focus { outline: none; border-color: var(--accent); }
+  .section-label {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin: 18px 2px 9px;
+    font-weight: 600;
+    letter-spacing: .3px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="date-block">
+    <div class="date-main" id="dateMain">—</div>
+    <div class="date-sub" id="dateSub">—</div>
+  </div>
+  <div class="streak zero" id="streak"><b>0</b> 天连打</div>
+</header>
+
+<div class="progress-card">
+  <div class="ring" id="ring">
+    <svg width="92" height="92">
+      <circle class="track" cx="46" cy="46" r="39" fill="none" stroke-width="8"></circle>
+      <circle class="fill" id="ringFill" cx="46" cy="46" r="39" fill="none" stroke-width="8"
+              stroke-dasharray="245.04" stroke-dashoffset="245.04"></circle>
+    </svg>
+    <div class="ring-label"><span id="ringPct">0%</span><small>今日</small></div>
+  </div>
+  <div class="progress-meta">
+    <div class="progress-title" id="progressTitle">今天还没开始</div>
+    <div class="progress-hint" id="progressHint">照着清单一条条打勾就行。</div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="daily">每日</button>
+  <button class="tab" data-tab="weekly">每周</button>
+  <button class="tab" data-tab="history">历史</button>
+</div>
+
+<main>
+  <div class="list" id="list"></div>
+
+  <div id="historyPane" style="display:none">
+    <div class="section-label">最近 60 天</div>
+    <div class="history-grid" id="historyGrid"></div>
+    <div class="legend">
+      <span><i style="background:var(--ok);opacity:.5"></i>全部完成</span>
+      <span><i style="background:var(--accent);opacity:.4"></i>部分完成</span>
+      <span><i style="background:var(--card);border:1px solid var(--line)"></i>没打卡</span>
+    </div>
+  </div>
+
+  <div id="notePane">
+    <div class="section-label">今天的备注（顺手记下复盘想法）</div>
+    <textarea class="note-area" id="noteBox" placeholder="例：今天 AI 说测试通过，但测试数量从 225 掉到 218，被抓到了。"></textarea>
+  </div>
+</main>
+
+<div class="toolbar">
+  <div class="toolbar-inner">
+    <button class="btn ghost" id="btnEdit" title="编辑清单">✎</button>
+    <button class="btn" id="btnExport">导出</button>
+    <button class="btn primary" id="btnSync">已同步</button>
+  </div>
+</div>
+
+<!-- 编辑清单 -->
+<dialog id="dlgEdit">
+  <div class="dlg-head">
+    <span>编辑清单</span>
+    <button class="btn ghost" id="btnEditClose" style="padding:4px 10px">✕</button>
+  </div>
+  <div class="dlg-body">
+    <div id="editList"></div>
+    <div class="field" style="margin-top:14px">
+      <label>新增一条</label>
+      <input id="newText" placeholder="例：本周确认所有 commit 都有回退点">
+      <select id="newSheet" style="margin-top:8px">
+        <option value="每日">每日</option>
+        <option value="每周">每周</option>
+      </select>
+      <div class="hint">改完点「保存清单」，两台设备都会更新。</div>
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" id="btnAddItem">添加</button>
+    <button class="btn primary" id="btnSaveItems">保存清单</button>
+  </div>
+</dialog>
+
+<!-- 导出 / 导入 -->
+<dialog id="dlgExport">
+  <div class="dlg-head"><span>备份与迁移</span>
+    <button class="btn ghost" id="btnExportClose" style="padding:4px 10px">✕</button>
+  </div>
+  <div class="dlg-body">
+    <div class="field">
+      <label>导出（复制这段 JSON 存到别处）</label>
+      <textarea id="exportText" readonly style="font-size:12px;font-family:ui-monospace,Consolas,monospace"></textarea>
+    </div>
+    <div class="field">
+      <label>导入（粘贴之前导出的 JSON）</label>
+      <textarea id="importText" placeholder="粘贴备份内容…" style="font-size:12px;font-family:ui-monospace,Consolas,monospace"></textarea>
+    </div>
+    <div class="hint">导入会**覆盖**当前所有清单和记录。换手机、重装浏览器之前先用它备份。</div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn" id="btnDoImport">导入</button>
+    <button class="btn primary" id="btnCopy">复制</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+// ============================================================ 基础工具
+
+/** 本地日期 → YYYY-MM-DD。刻意不用 toISOString()，那是 UTC，晚上 8 点后会差一天。 */
+function dateKey(d = new Date()) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function dateFromKey(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function shiftDay(key, delta) {
+  const d = dateFromKey(key);
+  d.setDate(d.getDate() + delta);
+  return dateKey(d);
+}
+
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+function prettyDate(key) {
+  const d = dateFromKey(key);
+  return `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+}
+
+// ============================================================ 状态
+
+const TODAY = dateKey();
+
+let state = { items: [], days: {}, rev: 0 };
+let tab = 'daily';
+let editing = false;
+let pendingItems = null;
+
+/**
+ * 本地缓存：服务器连不上的时候（例如出门在外、没开电脑），
+ * 至少还能看到上次的数据，不至于一片空白。
+ * 但权威数据永远在服务器上的 data.json。
+ */
+function cacheKey() { return 'checkin-state-v1'; }
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(cacheKey());
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveCache() {
+  try { localStorage.setItem(cacheKey(), JSON.stringify(state)); } catch { }
+}
+
+// ============================================================ 服务器通信
+
+let saving = false;
+let lastError = null;
+
+async function api(path, body) {
+  const opt = body
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+    : {};
+  const res = await fetch(path, opt);
+  if (!res.ok) {
+    let msg = 'HTTP ' + res.status;
+    try { const j = await res.json(); if (j.error) msg = j.error; } catch { }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+async function pullState() {
+  try {
+    const next = await api('/api/state');
+    if (next.rev !== state.rev) {
+      state = next;
+      saveCache();
+      render();
+    }
+    if (lastError) { lastError = null; setSyncLabel(editing ? '编辑中' : '已同步'); }
+  } catch (err) {
+    lastError = err.message;
+    setSyncLabel('离线', true);
+  }
+}
+
+async function pushDay(date, done, note) {
+  saving = true;
+  setSyncLabel('保存中…');
+  try {
+    const r = await api('/api/day', { date, done, note });
+    state.rev = r.rev;
+    state.days[date] = r.day;
+    saveCache();
+    lastError = null;
+    setSyncLabel('已同步');
+  } catch (err) {
+    lastError = err.message;
+    setSyncLabel('保存失败', true);
+    showToast('保存失败：' + err.message, true);
+  } finally {
+    saving = false;
+  }
+}
+
+// ============================================================ 渲染
+
+const el = (id) => document.getElementById(id);
+
+function dayData(key) {
+  const d = state.days[key];
+  return { done: Array.isArray(d?.done) ? d.done : [], note: d?.note || '' };
+}
+
+function itemsOf(sheet) {
+  return state.items
+    .filter((it) => (it.sheet || '每日') === sheet)
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+/** 今日完成度只看「每日」那一列；每周的项不参与每天的百分比。 */
+function todayProgress() {
+  const list = itemsOf('每日');
+  if (!list.length) return { done: 0, total: 0, pct: 0 };
+  const doneIds = new Set(dayData(TODAY).done);
+  const done = list.filter((it) => doneIds.has(it.id)).length;
+  return { done, total: list.length, pct: Math.round((done / list.length) * 100) };
+}
+
+/** 连续打卡天数：从今天往回数，每天的「每日」项全做完才算一天。 */
+function computeStreak() {
+  let streak = 0;
+  let cursor = TODAY;
+  // 今天还没做完不算断——今天才刚开始，从昨天开始数
+  const p = todayProgress();
+  if (p.total && p.done < p.total) cursor = shiftDay(TODAY, -1);
+
+  for (let i = 0; i < 400; i++) {
+    const list = itemsOf('每日');
+    if (!list.length) break;
+    const d = dayData(cursor);
+    const allDone = list.every((it) => d.done.includes(it.id));
+    if (!allDone) break;
+    streak++;
+    cursor = shiftDay(cursor, -1);
+  }
+  return streak;
+}
+
+function render() {
+  // ---- 顶部日期
+  const now = new Date();
+  el('dateMain').textContent = `${prettyDate(TODAY)} ${WEEKDAYS[now.getDay()]}`;
+  el('dateSub').textContent = `${TODAY} · 监管验收打卡`;
+
+  // ---- 进度环
+  const p = todayProgress();
+  const C = 2 * Math.PI * 39;
+  el('ringFill').setAttribute('stroke-dasharray', String(C));
+  el('ringFill').setAttribute('stroke-dashoffset', String(C * (1 - p.pct / 100)));
+  el('ringPct').textContent = p.pct + '%';
+  el('ring').classList.toggle('complete', p.total > 0 && p.done === p.total);
+
+  const title = el('progressTitle');
+  const hint = el('progressHint');
+  if (!p.total) {
+    title.textContent = '清单是空的';
+    hint.textContent = '点左下角 ✎ 加几条要打卡的事。';
+    hint.className = 'progress-hint';
+  } else if (p.done === p.total) {
+    title.textContent = '今天做完了 ✓';
+    hint.textContent = '可以收工了。顺手把这个结论记到备注里。';
+    hint.className = 'progress-hint ok';
+  } else {
+    title.textContent = `还剩 ${p.total - p.done} 项`;
+    hint.textContent = `${p.done} / ${p.total} 已完成。`;
+    hint.className = 'progress-hint';
+  }
+
+  // ---- 连续天数
+  const streak = computeStreak();
+  el('streak').innerHTML = `<b>${streak}</b> 天连打`;
+  el('streak').classList.toggle('zero', streak === 0);
+
+  // ---- 清单
+  const isHistory = tab === 'history';
+  el('historyPane').style.display = isHistory ? '' : 'none';
+  el('notePane').style.display = isHistory ? 'none' : '';
+
+  if (isHistory) {
+    renderHistory();
+  } else {
+    renderList(tab);
+  }
+
+  // ---- 备注
+  if (!isHistory) {
+    const nb = el('noteBox');
+    if (document.activeElement !== nb) nb.value = dayData(TODAY).note;
+  }
+}
+
+function renderList(sheet) {
+  const list = itemsOf(sheet);
+  const doneIds = new Set(dayData(TODAY).done);
+  const box = el('list');
+
+  if (!list.length) {
+    box.innerHTML = `<div class="empty">这一栏还没有条目<br>点左下角 ✎ 添加</div>`;
+    return;
+  }
+
+  box.innerHTML = '';
+  for (const it of list) {
+    const done = doneIds.has(it.id);
+    const row = document.createElement('div');
+    row.className = 'item' + (done ? ' done' : '');
+    row.dataset.id = it.id;
+    row.innerHTML = `
+      <div class="check">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#0f1115" stroke-width="3.4"
+             stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </div>
+      <div class="item-body">
+        <div class="item-text"></div>
+      </div>
+      <button class="del" title="删除">✕</button>`;
+    // 用 textContent 而不是拼进 innerHTML：条目文字是用户输入，拼 HTML 会被注入
+    row.querySelector('.item-text').textContent = it.text;
+    row.addEventListener('click', (ev) => {
+      if (ev.target.closest('.del')) return;
+      if (editing) return;
+      toggleItem(it.id);
+    });
+    row.querySelector('.del').addEventListener('click', () => {
+      pendingItems = itemsOfAll().filter((x) => x.id !== it.id);
+      renderEditList();
+    });
+    box.appendChild(row);
+  }
+}
+
+function itemsOfAll() {
+  return [...state.items].sort((a, b) => {
+    const s = (a.sheet || '每日').localeCompare(b.sheet || '每日');
+    return s !== 0 ? s : (a.order ?? 0) - (b.order ?? 0);
+  });
+}
+
+function renderHistory() {
+  const grid = el('historyGrid');
+  grid.innerHTML = '';
+  for (let i = 59; i >= 0; i--) {
+    const key = shiftDay(TODAY, -i);
+    const list = itemsOf('每日');
+    const d = dayData(key);
+    const doneCount = list.filter((it) => d.done.includes(it.id)).length;
+    const pct = list.length ? doneCount / list.length : 0;
+
+    const cell = document.createElement('div');
+    cell.className = 'day-cell';
+    if (key === TODAY) cell.classList.add('today');
+    if (!list.length || doneCount === 0) cell.classList.add('blank');
+    if (list.length && doneCount === list.length) cell.classList.add('full');
+
+    cell.innerHTML = `<b>${dateFromKey(key).getDate()}</b><span>${pct ? Math.round(pct * 100) + '%' : ''}</span>
+      <div class="bar" style="height:${Math.round(pct * 100)}%"></div>`;
+    cell.title = `${key}  完成 ${doneCount}/${list.length}`;
+    grid.appendChild(cell);
+  }
+}
+
+// ============================================================ 交互
+
+async function toggleItem(id) {
+  const d = dayData(TODAY);
+  const set = new Set(d.done);
+  if (set.has(id)) set.delete(id); else set.add(id);
+  // 先更新界面再发请求（响应更快），失败了再靠服务器数据纠正
+  d.done = [...set];
+  state.days[TODAY] = { done: d.done, note: d.note };
+  render();
+  await pushDay(TODAY, d.done, d.note);
+}
+
+function renderEditList() {
+  const box = el('editList');
+  const list = pendingItems || itemsOfAll();
+  box.innerHTML = '';
+  list.forEach((it, idx) => {
+    const row = document.createElement('div');
+    row.className = 'item';
+    row.style.cursor = 'default';
+    row.innerHTML = `
+      <div class="check" style="border-style:dashed"></div>
+      <div class="item-body">
+        <input class="edit-input" style="width:100%;background:transparent;border:0;color:inherit;font:inherit;padding:2px 0;outline:none">
+        <div style="margin-top:6px;display:flex;gap:6px">
+          <select class="edit-sheet" style="background:var(--bg);border:1px solid var(--line);color:var(--muted);font-size:12px;padding:3px 6px;border-radius:6px">
+            <option value="每日">每日</option><option value="每周">每周</option>
+          </select>
+          <button class="del" style="display:flex;width:26px;height:22px;font-size:13px">✕</button>
+        </div>
+      </div>`;
+    const input = row.querySelector('.edit-input');
+    input.value = it.text;
+    input.addEventListener('input', () => { list[idx].text = input.value; });
+    const sel = row.querySelector('.edit-sheet');
+    sel.value = it.sheet || '每日';
+    sel.addEventListener('change', () => { list[idx].sheet = sel.value; });
+    row.querySelector('.del').addEventListener('click', () => {
+      list.splice(idx, 1);
+      pendingItems = list;
+      renderEditList();
+    });
+    box.appendChild(row);
+  });
+  pendingItems = list;
+}
+
+function setSyncLabel(text, isErr) {
+  const b = el('btnSync');
+  b.textContent = text;
+  b.style.background = isErr ? 'var(--bad)' : 'var(--accent)';
+  b.style.borderColor = isErr ? 'var(--bad)' : 'var(--accent)';
+}
+
+let toastTimer = null;
+function showToast(msg, isErr) {
+  const t = el('toast');
+  t.textContent = msg;
+  t.classList.toggle('err', !!isErr);
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+// ============================================================ 事件绑定
+
+document.querySelectorAll('.tab').forEach((t) => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((x) => x.classList.remove('active'));
+    t.classList.add('active');
+    tab = t.dataset.tab;
+    render();
+  });
+});
+
+el('noteBox').addEventListener('blur', async () => {
+  const d = dayData(TODAY);
+  const note = el('noteBox').value;
+  if (note === d.note) return;
+  d.note = note;
+  state.days[TODAY] = { done: d.done, note };
+  await pushDay(TODAY, d.done, note);
+});
+
+el('btnEdit').addEventListener('click', () => {
+  editing = !editing;
+  document.body.classList.toggle('editing', editing);
+  if (editing) {
+    pendingItems = itemsOfAll().map((x) => ({ ...x }));
+    renderEditList();
+    el('dlgEdit').showModal();
+  } else {
+    el('dlgEdit').close();
+  }
+});
+
+el('btnEditClose').addEventListener('click', () => {
+  editing = false;
+  document.body.classList.remove('editing');
+  pendingItems = null;
+  el('dlgEdit').close();
+  render();
+});
+
+el('btnAddItem').addEventListener('click', () => {
+  const text = el('newText').value.trim();
+  if (!text) return;
+  const sheet = el('newSheet').value;
+  const list = pendingItems || itemsOfAll();
+  list.push({ id: 'i' + Date.now(), sheet, text, order: list.length });
+  pendingItems = list;
+  el('newText').value = '';
+  renderEditList();
+});
+
+el('btnSaveItems').addEventListener('click', async () => {
+  const list = (pendingItems || []).filter((x) => (x.text || '').trim());
+  const payload = list.map((x, i) => ({
+    id: x.id, sheet: x.sheet || '每日', text: x.text.trim(), order: i,
+  }));
+  try {
+    setSyncLabel('保存中…');
+    const r = await api('/api/items', { items: payload });
+    state.items = r.items;
+    state.rev = r.rev;
+    saveCache();
+    editing = false;
+    document.body.classList.remove('editing');
+    pendingItems = null;
+    el('dlgEdit').close();
+    setSyncLabel('已同步');
+    render();
+    showToast('清单已保存');
+  } catch (err) {
+    setSyncLabel('保存失败', true);
+    showToast('保存失败：' + err.message, true);
+  }
+});
+
+el('btnExport').addEventListener('click', () => {
+  el('exportText').value = JSON.stringify(state, null, 2);
+  el('importText').value = '';
+  el('dlgExport').showModal();
+});
+
+el('btnExportClose').addEventListener('click', () => el('dlgExport').close());
+
+el('btnCopy').addEventListener('click', async () => {
+  const text = el('exportText').value;
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('已复制到剪贴板');
+  } catch {
+    el('exportText').select();
+    showToast('请手动复制（已全选）');
+  }
+});
+
+el('btnDoImport').addEventListener('click', async () => {
+  const raw = el('importText').value.trim();
+  if (!raw) return;
+  let parsed;
+  try { parsed = JSON.parse(raw); }
+  catch { showToast('JSON 格式不对', true); return; }
+  if (!Array.isArray(parsed.items)) { showToast('缺少 items 字段', true); return; }
+  if (!confirm('导入会覆盖当前所有清单和打卡记录，确定吗？')) return;
+
+  try {
+    setSyncLabel('导入中…');
+    const r = await api('/api/import', parsed);
+    state = await api('/api/state');
+    saveCache();
+    el('dlgExport').close();
+    setSyncLabel('已同步');
+    render();
+    showToast('导入完成');
+  } catch (err) {
+    setSyncLabel('导入失败', true);
+    showToast('导入失败：' + err.message, true);
+  }
+});
+
+el('btnSync').addEventListener('click', async () => {
+  setSyncLabel('同步中…');
+  await pullState();
+  if (!lastError) showToast('已是最新');
+});
+
+// ============================================================ 启动
+
+(async function boot() {
+  // 先用本地缓存把界面画出来，避免白屏等网络
+  const cached = loadCache();
+  if (cached && Array.isArray(cached.items)) {
+    state = cached;
+    render();
+  }
+  await pullState();
+  if (!state.items.length) render();
+
+  // 每 5 秒拉一次：另一台设备打的卡会自动出现在这台上面
+  setInterval(() => {
+    if (!document.hidden && !editing && !saving) pullState();
+  }, 5000);
+
+  // 切回前台时立刻同步一次（手机上从后台切回来很常见）
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) pullState();
+  });
+})();
+</script>
+</body>
+</html>

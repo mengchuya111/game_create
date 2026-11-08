@@ -51,3 +51,12 @@ node_modules/
 
 # 演示录制产物
 shots/
+
+# ============================================================
+#  监管打卡 App（tools/checkin）
+# ============================================================
+# 打卡记录是私人数据，不该推给队友。
+# 脚本和页面要入库（队友也能用），只有运行时产生的数据文件排除。
+tools/checkin/data.json
+tools/checkin/data.json.tmp
+tools/checkin/data.json.broken-*
